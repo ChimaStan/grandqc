@@ -20,12 +20,18 @@ import argparse
 Image.MAX_IMAGE_PIXELS = 1000000000
 
 # DEVICE
-DEVICE = 'cuda'
+# DEVICE = 'cuda'
 '''
 'cuda:0' - NVIDIA GPU card
 'mps'    - APPLE Silicon
 '''
-
+if torch.cuda.is_available():
+    DEVICE = 'cuda'
+elif torch.backends.mps.is_available():
+    DEVICE = 'mps'
+else:
+    DEVICE = 'cpu'
+    
 # Input parameter
 parser = argparse.ArgumentParser()
 parser.add_argument('--slide_folder', dest='slide_folder', help='path to WSIs', type=str)
@@ -131,7 +137,7 @@ for slide_name in slide_names[start:end]:
 
     # LOAD TISSUE DETECTION MAP
     try:
-        tis_det_map = Image.open(OUTPUT_DIR + "tis_det_mask/" + slide_name + '_MASK.png')
+        tis_det_map = Image.open(OUTPUT_DIR + "tis_det_mask/" + slide_name + '_MASK.png').convert("L")
         '''
         Tissue detection map is generated on MPP = 10
         This map is used for on-fly control of the necessity of model inference.

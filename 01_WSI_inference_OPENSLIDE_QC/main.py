@@ -19,11 +19,17 @@ Image.MAX_IMAGE_PIXELS = 1000000000
 
 
 # DEVICE
-DEVICE = 'cuda'
+# DEVICE = 'cuda'
 '''
 'cuda:0' - NVIDIA GPU card
 'mps'    - APPLE Silicon
 '''
+if torch.cuda.is_available():
+    DEVICE = 'cuda'
+elif torch.backends.mps.is_available():
+    DEVICE = 'mps'
+else:
+    DEVICE = 'cpu'
 
 # Input parameter
 parser = argparse.ArgumentParser()
@@ -132,7 +138,7 @@ for slide_name in slide_names[start:end]:
         p_s, patch_n_w_l0, patch_n_h_l0, mpp, w_l0, h_l0, obj_power = slide_info(slide, M_P_S_MODEL, MPP_MODEL)
 
         # LOAD TISSUE DETECTION MAP
-        tis_det_map = Image.open(os.path.join(OUTPUT_DIR, 'tis_det_mask', slide_name + '_MASK.png'))
+        tis_det_map = Image.open(os.path.join(OUTPUT_DIR, 'tis_det_mask', slide_name + '_MASK.png')).convert("L")
         '''
         Tissue detection map is generated on MPP = 10
         This map is used for on-fly control of the necessity of model inference.

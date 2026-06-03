@@ -10,12 +10,18 @@ from wsi_tis_detect_helper_fx import get_preprocessing, make_class_map
 
 
 # DEVICE
-DEVICE = 'cuda'
+# DEVICE = 'cuda'
 '''
 'cuda' - NVIDIA GPU card
 'mps'    - APPLE Silicon
 '''
-
+if torch.cuda.is_available():
+    DEVICE = 'cuda'
+elif torch.backends.mps.is_available():
+    DEVICE = 'mps'
+else:
+    DEVICE = 'cpu'
+    
 # MODEL TISSUE DETECTION:
 MODEL_TD_DIR = './models/td/'
 MODEL_TD_NAME = 'Tissue_Detection_MPP10.pth'

@@ -10,11 +10,17 @@ from skimage.io import imread
 import cv2
 
 # DEVICE
-DEVICE = 'cuda'
+# DEVICE = 'cuda'
 '''
 'cuda' - NVIDIA GPU card
 'mps'    - APPLE Silicon
 '''
+if torch.cuda.is_available():
+    DEVICE = 'cuda'
+elif torch.backends.mps.is_available():
+    DEVICE = 'mps'
+else:
+    DEVICE = 'cpu'
 
 # MODEL(S)
 # MODEL TISSUE DETECTION:
