@@ -24,6 +24,20 @@
 
 **Abstract:** Histological slides contain numerous artifacts that can significantly deteriorate the performance of image analysis algorithms. Here we develop the GrandQC tool for tissue and multi-class artifact segmentation. GrandQC allows for high-precision tissue segmentation (Dice score 0.957) and segmentation of tissue without artifacts (Dice score 0.919–0.938 dependent on magnification). Slides from 19 international pathology departments digitized with the most common scanning systems, and from The Cancer Genome Atlas dataset were used to establish a QC benchmark, analyzing inter-institutional, intra-institutional, temporal, and inter-scanner slide quality variations. GrandQC improves the performance of downstream image analysis algorithms. We open-source the GrandQC tool, our large manually annotated test dataset, and all QC masks for the entire TCGA cohort to address the problem of QC in digital/computational pathology. GrandQC can be used as a tool to monitor sample preparation and scanning quality in pathology departments and help to track and eliminate major artifact sources.
 
+## Fork Notice
+
+This repository is a fork of the original [GrandQC project](https://github.com/cpath-ukk/grandqc).
+
+The modifications in this fork include:
+
+- Addition of a Conda environment specification (`environment.yml`)
+- Containerisation via Docker
+- Automated container publishing GHCR
+- Added automatic device backend detection (CUDA, MPS, or CPU)
+- Improved tissue mask loading robustness by explicitly loading tissue detection masks in 8-bit grayscale mode prior to resizing and multi-class artifact segmentation.
+
+Please refer to the original publication and repository for the primary GrandQC methodology and scientific validation.
+
 ## Introduction
 
 ### Overview
@@ -99,16 +113,45 @@ and the five types of artifacts are displayed in distinct colors, as shown in th
 </div>
 
 ## Installation
+### Option 1: Local installation
 
-### Install Dependencies
-> conda create -n grandqc python==3.10 -y && conda activate grandqc
-> 
-> git clone https://github.com/cpath-ukk/grandqc.git && cd grandqc
-> 
-> pip install -r requirements.txt
+```bash
+git clone https://github.com/chimastan/grandqc.git
+cd grandqc
 
-### Install Openslide
-> conda install -c conda-forge openslide openslide-python
+conda env create -f environment.yml
+conda activate grandqc
+```
+
+### Option 2: Containerised installation (recommended)
+
+The containerised installation includes all GrandQC dependencies and can be used without creating a local Conda environment.
+
+#### Docker
+
+Pull the latest container:
+
+```bash
+docker pull ghcr.io/chimastan/grandqc:latest
+```
+
+#### Singularity/Apptainer
+
+On HPC systems where Docker is not available, the GHCR Docker image can be converted to a Singularity/Apptainer image.
+
+With Apptainer:
+
+```bash
+apptainer pull grandqc_latest.sif docker://ghcr.io/chimastan/grandqc:latest
+```
+
+or with Singularity:
+
+```bash
+singularity pull grandqc_latest.sif docker://ghcr.io/chimastan/grandqc:latest
+```
+
+Once inside the container, navigate to the relevant GrandQC inference folder and run the tissue or artifact segmentation scripts as described below.
 
 ## Models Download and Folder Structure 
 
@@ -122,7 +165,7 @@ Tissue Segmentation Model: [Model](https://zenodo.org/records/14507273)
 Artifact Segmentation Models: [Models](https://zenodo.org/records/14041538)
 
 
-Download the model to the specified folder. The final folder structure should be as follows:
+The final folder structure is as follows:
 
 ```plaintext
 
@@ -153,11 +196,9 @@ grandqc
 └── README.md
 ```
 
-## How to use different versions (5x ,7x, 10x)
+## How to use different model versions (5x ,7x, 10x)
 
 The default version is 7x (Checkpoint: GrandQC_MPP15.pth)
-
-To use 5x and 10x checkpoints, the `run_art.sh` script should be modified.
 
 For 5x, use:
 
@@ -169,40 +210,192 @@ For 10x, use:
 ```commandline
 QC_MPP_MODEL=1.0
 ```
+
 ## How to run the scripts
 
-### For WSIs with the form of `.svs` (Leica), `.ndpi` (Hamamatsu), `.tiff` (Philips)
+GrandQC inference is usually run in two stages:
 
-Fot this case, you need to use the scripts in `01_WSI_inference_OPENSLIDE_QC`:
+1. **Tissue segmentation** using `wsi_tis_detect.py`
+2. **Multi-class artifact segmentation** using `main.py`
 
-```commandline
+The tissue segmentation step should be run first because the artifact segmentation step uses the tissue detection mask produced by the first stage. The same `OUTPUT_DIR` should usually be used for both steps.
+
+For reference, see the sample bash scripts `run_tis.sh` and `run_art.sh`.
+
+### Command-line arguments
+
+#### Tissue segmentation: `wsi_tis_detect.py`
+
+```bash
+python wsi_tis_detect.py \
+    --slide_folder "$SLIDE_FOLDER" \
+    --output_dir "$OUTPUT_DIR"
+```
+
+Arguments:
+
+* `--slide_folder`: Path to the folder containing the input whole-slide images.
+* `--output_dir`: Path to the folder where tissue segmentation outputs will be saved.
+
+#### Multi-class artifact segmentation: `main.py`
+
+```bash
+python main.py \
+    --slide_folder "$SLIDE_FOLDER" \
+    --output_dir "$OUTPUT_DIR" \
+    --create_geojson "$CREATE_GEOJSON" \
+    --mpp_model "$QC_MPP_MODEL"
+```
+
+Arguments:
+
+* `--slide_folder`: Path to the folder containing the input whole-slide images.
+* `--output_dir`: Path to the output folder. This should usually be the same output directory used for tissue segmentation.
+* `--create_geojson`: Whether to create GeoJSON output files for QC results. The default is `"Y"`.
+* `--mpp_model`: MPP value of the artifact segmentation model. The allowed values are `2.0`, `1.5`, and `1.0`. Use `2.0` for the 5x model, `1.5` for the 7x model, and `1.0` for the 10x model. The default is `1.5`.
+* `--start`: Start index of the WSI list to process. This is useful for processing a subset of slides. The default is `0`.
+* `--end`: End index of the WSI list to process. The default is `-1`.
+* `--ol_factor`: Reduction factor for the overlay image relative to the original WSI dimensions. Larger values produce smaller overlay images. The default is `10`.
+
+### Running locally
+
+#### OpenSlide-supported WSIs
+
+For OpenSlide-supported WSI formats such as `.svs`, `.ndpi`, and OpenSlide-readable `.tiff` files, use the scripts in `01_WSI_inference_OPENSLIDE_QC`:
+
+```bash
 cd 01_WSI_inference_OPENSLIDE_QC
 ```
 
-- Tissue Segmentation
+Run tissue segmentation followed by multi-class artifact segmentation:
 
-Before running the Tissue-Segmentation script, you need to define the slides path **SLIDE_FOLDER** and **OUTPUT_DIR** in `run_tis.sh` first and then run:
-```commandline
-sh run_tis.sh
+```bash
+SLIDE_FOLDER="/path/to/the/slides/"
+OUTPUT_DIR="/path/to/the/output/"
+QC_MPP_MODEL=1.5
+CREATE_GEOJSON="Y"
+
+python wsi_tis_detect.py \
+    --slide_folder "$SLIDE_FOLDER" \
+    --output_dir "$OUTPUT_DIR"
+
+python main.py \
+    --slide_folder "$SLIDE_FOLDER" \
+    --output_dir "$OUTPUT_DIR" \
+    --create_geojson "$CREATE_GEOJSON" \
+    --mpp_model "$QC_MPP_MODEL"
 ```
 
-- Artifacts Segmentation
+#### OME-TIFF WSIs
 
-Similar to the Tissue Segmentation, before running the Artifacts-Segmentation script, you need to define the slides path **SLIDE_FOLDER** and **OUTPUT_DIR** in `run_art.sh` first, if you want to create `Geojson` file, make sure that `CREATE_GEOJSON="Y"` in `run_art.sh` and then run:
+For OME-TIFF files, use the scripts in `02_WSI_inference_OME_TIFF_QC`:
 
-```commandline
-sh run_art.sh
-```
-
-### For WSIs with the form of `ome.tiff`
-
-Fot this case, you need to use the scripts in `02_WSI_inference_OME_TIFF_QC`:
-
-```commandline
+```bash
 cd 02_WSI_inference_OME_TIFF_QC
 ```
 
-abd then same as the usage above.
+Run tissue segmentation followed by multi-class artifact segmentation:
+
+```bash
+SLIDE_FOLDER="/path/to/the/ome_tiff/slides/"
+OUTPUT_DIR="/path/to/the/output/"
+QC_MPP_MODEL=1.5
+CREATE_GEOJSON="Y"
+
+python wsi_tis_detect.py \
+    --slide_folder "$SLIDE_FOLDER" \
+    --output_dir "$OUTPUT_DIR"
+
+python main.py \
+    --slide_folder "$SLIDE_FOLDER" \
+    --output_dir "$OUTPUT_DIR" \
+    --create_geojson "$CREATE_GEOJSON" \
+    --mpp_model "$QC_MPP_MODEL"
+```
+
+### Running with Docker
+
+The examples below mount local slide and output folders into the container as `/slides` and `/output`.
+
+#### OpenSlide-supported WSIs with Docker
+
+```bash
+docker run --rm -it \
+    -v /path/to/the/slides:/slides \
+    -v /path/to/the/output:/output \
+    ghcr.io/chimastan/grandqc:latest \
+    bash -lc '
+        cd 01_WSI_inference_OPENSLIDE_QC
+
+        SLIDE_FOLDER="/slides"
+        OUTPUT_DIR="/output"
+        QC_MPP_MODEL=1.5
+        CREATE_GEOJSON="Y"
+
+        python wsi_tis_detect.py \
+            --slide_folder "$SLIDE_FOLDER" \
+            --output_dir "$OUTPUT_DIR"
+
+        python main.py \
+            --slide_folder "$SLIDE_FOLDER" \
+            --output_dir "$OUTPUT_DIR" \
+            --create_geojson "$CREATE_GEOJSON" \
+            --mpp_model "$QC_MPP_MODEL"
+    '
+```
+
+#### OME-TIFF WSIs with Docker
+
+```bash
+docker run --rm -it \
+    -v /path/to/the/ome_tiff/slides:/slides \
+    -v /path/to/the/output:/output \
+    ghcr.io/chimastan/grandqc:latest \
+    bash -lc '
+        cd 02_WSI_inference_OME_TIFF_QC
+
+        SLIDE_FOLDER="/slides"
+        OUTPUT_DIR="/output"
+        QC_MPP_MODEL=1.5
+        CREATE_GEOJSON="Y"
+
+        python wsi_tis_detect.py \
+            --slide_folder "$SLIDE_FOLDER" \
+            --output_dir "$OUTPUT_DIR"
+
+        python main.py \
+            --slide_folder "$SLIDE_FOLDER" \
+            --output_dir "$OUTPUT_DIR" \
+            --create_geojson "$CREATE_GEOJSON" \
+            --mpp_model "$QC_MPP_MODEL"
+    '
+```
+
+### Running with Singularity/Apptainer
+
+The Docker examples above can also be run with Singularity or Apptainer after pulling the `.sif` image.
+
+For example, the Docker command pattern:
+
+```bash
+docker run --rm -it \
+    -v /path/to/the/slides:/slides \
+    -v /path/to/the/output:/output \
+    ghcr.io/chimastan/grandqc:latest \
+    bash -lc '<commands>'
+```
+
+is equivalent to the Apptainer pattern:
+
+```bash
+apptainer exec \
+    --bind /path/to/the/slides:/slides \
+    --bind /path/to/the/output:/output \
+    grandqc_latest.sif \
+    bash -lc '<commands>'
+```
+
+The same can be run with `singularity exec` instead of `apptainer exec` on systems using Singularity.
 
 ## Integration in other packages
 
