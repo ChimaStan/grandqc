@@ -392,7 +392,11 @@ apptainer exec \
     --bind /path/to/the/slides:/slides \
     --bind /path/to/the/output:/output \
     grandqc_latest.sif \
-    bash -lc '<commands>'
+    bash -lc '
+    cd /app/grandqc/
+    
+    <commands>
+    '
 ```
 
 The same can be run with `singularity exec` instead of `apptainer exec` on systems using Singularity.
